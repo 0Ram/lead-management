@@ -1,248 +1,247 @@
 import Lead from '../models/Lead.js';
-import mongoose from 'mongoose';
 
-const createLead = async (req, res) => {
+export const createLead = async (req, res) => {
   try {
-    const { first_name, last_name, email } = req.body;
+    console.log('Creating lead with data:', req.body);
     
-    if (!first_name || !last_name || !email) {
-      return res.status(400).json({ 
-        message: 'First name, last name, and email are required'
-      });
-    }
-
     const leadData = {
       ...req.body,
+      // Ensure proper data types
       score: parseInt(req.body.score) || 0,
       lead_value: parseFloat(req.body.lead_value) || 0,
-      is_qualified: req.body.is_qualified === true || req.body.is_qualified === 'true',
+      is_qualified: Boolean(req.body.is_qualified),
       last_activity_at: req.body.last_activity_at ? new Date(req.body.last_activity_at) : null
     };
 
     const lead = new Lead(leadData);
     await lead.save();
     
-    res.status(201).json(lead);
+    console.log('Lead created successfully:', lead._id);
+    res.status(201).json({
+      message: 'Lead created successfully',
+      data: lead
+    });
   } catch (error) {
-    console.error('Create lead error:', error);
+    console.error('Error creating lead:', error);
     
-    if (error.code === 11000 && error.keyValue?.email) {
-      return res.status(400).json({ 
-        message: 'A lead with this email already exists'
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: 'A lead with this email already exists',
+        error: 'DUPLICATE_EMAIL'
       });
     }
     
-    res.status(500).json({ 
-      message: 'Server error while creating lead',
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        message: 'Validation failed',
+        error: error.message
+      });
+    }
+    
+    res.status(500).json({
+      message: 'Server error',
       error: error.message
     });
   }
 };
 
-const getLeads = async (req, res) => {
+export const getLeads = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const { page = 1, limit = 20 } = req.query;
     const skip = (page - 1) * limit;
-
-    let filter = {};
     
-    // String fields (email, company, city) - equals, contains
+    // Build filter query
+    const filterQuery = {};
+    
+    // String filters
     if (req.query.email) {
       if (req.query.email_op === 'contains') {
-        filter.email = { $regex: req.query.email, $options: 'i' };
+        filterQuery.email = { $regex: req.query.email, $options: 'i' };
       } else {
-        filter.email = req.query.email;
+        filterQuery.email = req.query.email;
       }
     }
     
     if (req.query.company) {
       if (req.query.company_op === 'contains') {
-        filter.company = { $regex: req.query.company, $options: 'i' };
+        filterQuery.company = { $regex: req.query.company, $options: 'i' };
       } else {
-        filter.company = req.query.company;
+        filterQuery.company = req.query.company;
       }
     }
     
     if (req.query.city) {
       if (req.query.city_op === 'contains') {
-        filter.city = { $regex: req.query.city, $options: 'i' };
+        filterQuery.city = { $regex: req.query.city, $options: 'i' };
       } else {
-        filter.city = req.query.city;
+        filterQuery.city = req.query.city;
       }
     }
-
-    // Enums (status, source) - equals, in
+    
+    // Enum filters
     if (req.query.status) {
-      if (req.query.status_op === 'in') {
-        filter.status = { $in: req.query.status.split(',') };
-      } else {
-        filter.status = req.query.status;
-      }
+      filterQuery.status = req.query.status;
     }
     
     if (req.query.source) {
-      if (req.query.source_op === 'in') {
-        filter.source = { $in: req.query.source.split(',') };
-      } else {
-        filter.source = req.query.source;
-      }
+      filterQuery.source = req.query.source;
     }
-
-    // Numbers (score, lead_value) - equals, gt, lt, between
+    
+    // Number filters
     if (req.query.score) {
-      if (req.query.score_op === 'gt') {
-        filter.score = { $gt: parseInt(req.query.score) };
-      } else if (req.query.score_op === 'lt') {
-        filter.score = { $lt: parseInt(req.query.score) };
-      } else if (req.query.score_op === 'between' && req.query.score_to) {
-        filter.score = { $gte: parseInt(req.query.score), $lte: parseInt(req.query.score_to) };
-      } else {
-        filter.score = parseInt(req.query.score);
-      }
+      filterQuery.score = parseInt(req.query.score);
     }
     
     if (req.query.lead_value) {
-      if (req.query.lead_value_op === 'gt') {
-        filter.lead_value = { $gt: parseFloat(req.query.lead_value) };
-      } else if (req.query.lead_value_op === 'lt') {
-        filter.lead_value = { $lt: parseFloat(req.query.lead_value) };
-      } else if (req.query.lead_value_op === 'between' && req.query.lead_value_to) {
-        filter.lead_value = { $gte: parseFloat(req.query.lead_value), $lte: parseFloat(req.query.lead_value_to) };
-      } else {
-        filter.lead_value = parseFloat(req.query.lead_value);
-      }
-    }
-
-    // Dates (created_at, last_activity_at) - on, before, after, between
-    if (req.query.created_at) {
-      if (req.query.created_at_op === 'before') {
-        filter.createdAt = { $lt: new Date(req.query.created_at) };
-      } else if (req.query.created_at_op === 'after') {
-        filter.createdAt = { $gt: new Date(req.query.created_at) };
-      } else if (req.query.created_at_op === 'between' && req.query.created_at_to) {
-        filter.createdAt = { $gte: new Date(req.query.created_at), $lte: new Date(req.query.created_at_to) };
-      } else {
-        const date = new Date(req.query.created_at);
-        const nextDay = new Date(date);
-        nextDay.setDate(date.getDate() + 1);
-        filter.createdAt = { $gte: date, $lt: nextDay };
-      }
+      filterQuery.lead_value = parseFloat(req.query.lead_value);
     }
     
-    if (req.query.last_activity_at) {
-      if (req.query.last_activity_at_op === 'before') {
-        filter.last_activity_at = { $lt: new Date(req.query.last_activity_at) };
-      } else if (req.query.last_activity_at_op === 'after') {
-        filter.last_activity_at = { $gt: new Date(req.query.last_activity_at) };
-      } else if (req.query.last_activity_at_op === 'between' && req.query.last_activity_at_to) {
-        filter.last_activity_at = { $gte: new Date(req.query.last_activity_at), $lte: new Date(req.query.last_activity_at_to) };
-      } else {
-        const date = new Date(req.query.last_activity_at);
-        const nextDay = new Date(date);
-        nextDay.setDate(date.getDate() + 1);
-        filter.last_activity_at = { $gte: date, $lt: nextDay };
-      }
-    }
-
-    // Boolean (is_qualified) - equals
+    // Boolean filter
     if (req.query.is_qualified !== undefined) {
-      filter.is_qualified = req.query.is_qualified === 'true';
+      filterQuery.is_qualified = req.query.is_qualified === 'true';
     }
-
-    // Get total count
-    const total = await Lead.countDocuments(filter);
-    const totalPages = Math.ceil(total / limit);
-
-    // Get leads
-    const leads = await Lead.find(filter)
+    
+    console.log('Filter query:', filterQuery);
+    console.log('Pagination:', { page, limit, skip });
+    
+    const leads = await Lead.find(filterQuery)
+      .limit(parseInt(limit))
       .skip(skip)
-      .limit(limit)
       .sort({ createdAt: -1 });
-
-    // Return in required format
+    
+    const total = await Lead.countDocuments(filterQuery);
+    
+    console.log(`Found ${leads.length} leads, total: ${total}`);
+    
     res.status(200).json({
-       leads,
-      page,
-      limit,
-      total,
-      totalPages
+      data: leads,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total: total,
+      totalPages: Math.ceil(total / limit)
     });
   } catch (error) {
-    console.error('Get leads error:', error);
-    res.status(500).json({ 
-      message: 'Server error while fetching leads',
+    console.error('Error fetching leads:', error);
+    res.status(500).json({
+      message: 'Server error',
       error: error.message
     });
   }
 };
 
-const getLead = async (req, res) => {
+export const getLead = async (req, res) => {
   try {
     const lead = await Lead.findById(req.params.id);
+    
     if (!lead) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: 'Lead not found'
       });
     }
-    res.status(200).json(lead);
+    
+    res.status(200).json({
+      message: 'Lead found',
+      data: lead
+    });
   } catch (error) {
-    console.error('Get lead error:', error);
-    res.status(500).json({ 
-      message: 'Server error while fetching lead',
+    console.error('Error fetching lead:', error);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        message: 'Invalid lead ID format'
+      });
+    }
+    
+    res.status(500).json({
+      message: 'Server error',
       error: error.message
     });
   }
 };
 
-const updateLead = async (req, res) => {
+export const updateLead = async (req, res) => {
   try {
-    const lead = await Lead.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    });
+    const leadData = {
+      ...req.body,
+      score: parseInt(req.body.score) || 0,
+      lead_value: parseFloat(req.body.lead_value) || 0,
+      is_qualified: Boolean(req.body.is_qualified),
+      last_activity_at: req.body.last_activity_at ? new Date(req.body.last_activity_at) : null
+    };
+    
+    const lead = await Lead.findByIdAndUpdate(
+      req.params.id,
+      leadData,
+      { new: true, runValidators: true }
+    );
     
     if (!lead) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: 'Lead not found'
       });
     }
     
-    res.status(200).json(lead);
+    console.log('Lead updated successfully:', lead._id);
+    res.status(200).json({
+      message: 'Lead updated successfully',
+      data: lead
+    });
   } catch (error) {
-    console.error('Update lead error:', error);
+    console.error('Error updating lead:', error);
     
-    if (error.code === 11000 && error.keyValue?.email) {
-      return res.status(400).json({ 
-        message: 'A lead with this email already exists'
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: 'A lead with this email already exists',
+        error: 'DUPLICATE_EMAIL'
       });
     }
     
-    res.status(500).json({ 
-      message: 'Server error while updating lead',
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        message: 'Validation failed',
+        error: error.message
+      });
+    }
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        message: 'Invalid lead ID format'
+      });
+    }
+    
+    res.status(500).json({
+      message: 'Server error',
       error: error.message
     });
   }
 };
 
-const deleteLead = async (req, res) => {
+export const deleteLead = async (req, res) => {
   try {
     const lead = await Lead.findByIdAndDelete(req.params.id);
+    
     if (!lead) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: 'Lead not found'
       });
     }
-    res.status(200).json({ 
+    
+    console.log('Lead deleted successfully:', lead._id);
+    res.status(200).json({
       message: 'Lead deleted successfully'
     });
   } catch (error) {
-    console.error('Delete lead error:', error);
-    res.status(500).json({ 
-      message: 'Server error while deleting lead',
+    console.error('Error deleting lead:', error);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        message: 'Invalid lead ID format'
+      });
+    }
+    
+    res.status(500).json({
+      message: 'Server error',
       error: error.message
     });
   }
 };
-
-export { createLead, getLeads, getLead, updateLead, deleteLead };

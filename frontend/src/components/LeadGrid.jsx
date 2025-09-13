@@ -33,11 +33,24 @@ const LeadGrid = ({ user, onLogout }) => {
 
       const response = await leadService.getLeads(params);
 
-      if (response.data && response.data.data) {
-        setLeads(response.data.data);
-        setTotalPages(response.data.totalPages || 1);
+      // ✅ Flexible response handling
+      if (response && response.data) {
+        if (Array.isArray(response.data)) {
+          // case: backend returns an array
+          setLeads(response.data);
+          setTotalPages(1);
+        } else if (response.data.data) {
+          // case: backend returns { data: [...], totalPages: X }
+          setLeads(response.data.data);
+          setTotalPages(response.data.totalPages || 1);
+        } else {
+          console.error("Unexpected response format:", response.data);
+          setLeads([]);
+          setTotalPages(1);
+        }
       } else {
-        setLeads(response.data || []);
+        console.error("No data in response:", response);
+        setLeads([]);
         setTotalPages(1);
       }
     } catch (err) {
@@ -47,6 +60,8 @@ const LeadGrid = ({ user, onLogout }) => {
           err.response?.data?.message || err.message || "Unknown error"
         }`
       );
+      setLeads([]);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
