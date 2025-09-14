@@ -1,35 +1,38 @@
 import axios from 'axios';
 
-// For development
-const API_BASE_URL = 'http://localhost:3001/api';
+// Use your deployed backend URL
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://lead-management-3-ox50.onrender.com';
 
-// Create axios instance
+console.log('🌐 Using Backend URL:', API_BASE_URL);
+
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: `${API_BASE_URL}/api`,
   withCredentials: true,
-  timeout: 10000 // 10 second timeout
+  timeout: 60000 // Increased for Render
 });
 
-// Request interceptor
+// Keep your existing interceptors and exports
 api.interceptors.request.use(
   (config) => {
-    console.log('Making API request:', config.method.toUpperCase(), config.url);
+    console.log('📡 API Request:', config.method.toUpperCase(), config.url);
     return config;
   },
   (error) => {
-    console.error('API request error:', error);
+    console.error('❌ API request error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor
 api.interceptors.response.use(
   (response) => {
-    console.log('API response:', response.status, response.config.url);
+    console.log('✅ API Response:', response.status, response.config.url);
     return response;
   },
   (error) => {
-    console.error('API response error:', error.response?.status, error.response?.data, error.message);
+    console.error('❌ API Response Error:', error.response?.status, error.response?.data);
+    if (error.response?.status === 401) {
+      window.location.href = '/login';
+    }
     return Promise.reject(error);
   }
 );
