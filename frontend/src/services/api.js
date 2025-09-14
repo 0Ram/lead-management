@@ -1,17 +1,22 @@
 import axios from 'axios';
 
-// Use your deployed backend URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://lead-management-3-ox50.onrender.com';
+// Connect to your local backend on port 3001
+const API_BASE_URL = 'http://localhost:3001';
 
-console.log('🌐 Using Backend URL:', API_BASE_URL);
 
+console.log('🌐 Using API URL:', API_BASE_URL);
+
+// Create axios instance
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   withCredentials: true,
-  timeout: 60000 // Increased for Render
+  timeout: 10000, // Reduced timeout for local development
+  headers: {
+    'Content-Type': 'application/json'
+  }
 });
 
-// Keep your existing interceptors and exports
+// Request interceptor
 api.interceptors.request.use(
   (config) => {
     console.log('📡 API Request:', config.method.toUpperCase(), config.url);
@@ -23,16 +28,30 @@ api.interceptors.request.use(
   }
 );
 
+// Response interceptor
 api.interceptors.response.use(
   (response) => {
     console.log('✅ API Response:', response.status, response.config.url);
     return response;
   },
   (error) => {
-    console.error('❌ API Response Error:', error.response?.status, error.response?.data);
+    console.error('❌ API Response Error:', {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+      url: error.config?.url
+    });
+    
+    // Handle connection errors
+    if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK') {
+      console.error('🔌 Cannot connect to backend - Make sure your server is running on port 3001');
+    }
+    
     if (error.response?.status === 401) {
+      console.log('🔒 Unauthorized - Redirecting to login');
       window.location.href = '/login';
     }
+    
     return Promise.reject(error);
   }
 );
